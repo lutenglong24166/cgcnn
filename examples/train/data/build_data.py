@@ -5,7 +5,7 @@ from monty.serialization import dumpfn
 from mp_api.client import MPRester
 
 API_KEY = "h7IsuVkIMpekrsJgfREs5DFd5mOnSoBT"
-DATA_FRAC = 0.001
+DATA_FRAC = 1.0
 SEED = 42
 
 

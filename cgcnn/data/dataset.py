@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from monty.serialization import loadfn
 from pymatgen.core.structure import Structure
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Subset
 from torch.utils.data.sampler import SubsetRandomSampler
 
 TORCH_DTYPE = torch.float32
@@ -198,27 +198,34 @@ def get_train_val_test_loader(
         train_size + val_size : train_size + val_size + test_size
     ].tolist()
 
+    train_generator = torch.Generator()
+    train_generator.manual_seed(seed)
+
     train_loader = DataLoader(
         dataset,
         batch_size=batch_size,
         collate_fn=collate_fn,
-        sampler=SubsetRandomSampler(train_idx),
+        sampler=SubsetRandomSampler(train_idx, generator=train_generator),
         num_workers=num_workers,
         pin_memory=pin_memory,
     )
+
+    val_subset = Subset(dataset, val_idx)
     val_loader = DataLoader(
-        dataset,
+        val_subset,
         batch_size=batch_size,
         collate_fn=collate_fn,
-        sampler=SubsetRandomSampler(val_idx),
+        shuffle=False,
         num_workers=num_workers,
         pin_memory=pin_memory,
     )
+
+    test_subset = Subset(dataset, test_idx)
     test_loader = DataLoader(
-        dataset,
+        test_subset,
         batch_size=batch_size,
         collate_fn=collate_fn,
-        sampler=SubsetRandomSampler(test_idx),
+        shuffle=False,
         num_workers=num_workers,
         pin_memory=pin_memory,
     )
