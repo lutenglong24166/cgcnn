@@ -330,7 +330,16 @@ class Trainer:
             dynamic_ncols=True,
         )
 
-        for batch in pbar:
+        scheduler_step_batches: set[int] = set()
+        is_cos_scheduler = isinstance(self.scheduler, CosineAnnealingLR)
+        if training and is_cos_scheduler:
+            n_batches = len(loader)
+            if n_batches > 0:
+                scheduler_step_batches = {
+                    max(1, (k * n_batches) // 10) for k in range(1, 11)
+                }
+
+        for idx, batch in enumerate(pbar):
             (
                 atom_feature,
                 edge_feature,
@@ -361,6 +370,10 @@ class Trainer:
                         )
 
                     self.optimizer.step()
+
+                    # CosLR: step 10 times per epoch (CHGNet-style).
+                    if idx + 1 in scheduler_step_batches:
+                        self.scheduler.step()
 
             bs = target.size(0)
             loss_meter.update(loss.detach().item(), bs)
@@ -426,6 +439,9 @@ class Trainer:
 
         if isinstance(self.scheduler, ReduceLROnPlateau):
             self.scheduler.step(monitor_value)
+        elif isinstance(self.scheduler, CosineAnnealingLR):
+            # CosLR is stepped inside the training epoch.
+            return
         else:
             self.scheduler.step()
 
