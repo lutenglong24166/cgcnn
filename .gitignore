@@ -93,3 +93,10 @@ Local
 
 # .DS_Store
 .DS_Store
+.vscode/
+
+# Local training datasets
+examples/train/*.json
+examples/train/data/*.json
+examples/train/checkpoints/
+examples/train/test_results.csv

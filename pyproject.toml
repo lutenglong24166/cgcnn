@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cgcnn"
+version = "0.1.0"
+description = "Minimal Crystal Graph Convolutional Neural Network implementation."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "numpy>=2.4.3",
+  "torch>=2.10.0",
+  "monty>=2026.2.18",
+  "pymatgen>=2026.3.23",
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.15.7",
+]
+
+[tool.setuptools.packages.find]
+include = ["cgcnn*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"examples/**/*.py" = ["E402", "T201"]
+"**/__init__.py" = ["F401"]
