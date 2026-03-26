@@ -16,7 +16,6 @@ from torch.optim.lr_scheduler import (
     CosineAnnealingWarmRestarts,
     ExponentialLR,
     MultiStepLR,
-    ReduceLROnPlateau,
 )
 from tqdm.auto import tqdm
 
@@ -198,7 +197,7 @@ class Trainer:
                 if epochs is None:
                     raise ValueError(
                         "epochs is required for CosLR default T_max=10*epochs. "
-                        "Pass scheduler_params['T_max'] or call fit(..., epochs=...)."
+                        "Pass scheduler_params['T_max'] or call train(..., epochs=...)."
                     )
                 params["T_max"] = 10 * epochs
             params.setdefault("eta_min", 1e-2 * self.learning_rate)
@@ -208,11 +207,6 @@ class Trainer:
             params.setdefault("T_mult", 2)
             params.setdefault("eta_min", 1e-2 * self.learning_rate)
             self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, **params)
-        elif name in {"ReduceLROnPlateau", "plateau"}:
-            params.setdefault("mode", "min" if self.task == "regression" else "max")
-            params.setdefault("factor", 0.5)
-            params.setdefault("patience", 10)
-            self.scheduler = ReduceLROnPlateau(self.optimizer, **params)
         else:
             raise NotImplementedError(f"Unsupported scheduler: {name}")
 
@@ -331,8 +325,7 @@ class Trainer:
         )
 
         scheduler_step_batches: set[int] = set()
-        is_cos_scheduler = isinstance(self.scheduler, CosineAnnealingLR)
-        if training and is_cos_scheduler:
+        if training and self.scheduler is not None:
             n_batches = len(loader)
             if n_batches > 0:
                 scheduler_step_batches = {
@@ -371,7 +364,7 @@ class Trainer:
 
                     self.optimizer.step()
 
-                    # CosLR: step 10 times per epoch (CHGNet-style).
+                    # CHGNet-style: step scheduler 10 times per epoch.
                     if idx + 1 in scheduler_step_batches:
                         self.scheduler.step()
 
@@ -433,18 +426,6 @@ class Trainer:
 
         return metrics
 
-    def _step_scheduler(self, monitor_value: float):
-        if self.scheduler is None:
-            return
-
-        if isinstance(self.scheduler, ReduceLROnPlateau):
-            self.scheduler.step(monitor_value)
-        elif isinstance(self.scheduler, CosineAnnealingLR):
-            # CosLR is stepped inside the training epoch.
-            return
-        else:
-            self.scheduler.step()
-
     def _is_better(self, current: float, best: float):
         if self.task == "regression":
             return current < best
@@ -487,7 +468,6 @@ class Trainer:
             train_metrics = self.train_one_epoch(train_loader)
             val_metrics = self.validate(val_loader)
 
-            self._step_scheduler(val_metrics[main_metric_name])
             current_lr = (
                 self.optimizer.param_groups[0]["lr"]
                 if self.optimizer is not None
