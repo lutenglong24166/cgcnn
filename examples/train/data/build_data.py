@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import os
+
 import pandas as pd
 from monty.serialization import dumpfn
 from mp_api.client import MPRester
 
-API_KEY = "h7IsuVkIMpekrsJgfREs5DFd5mOnSoBT"
-DATA_FRAC = 1.0
+API_KEY = os.getenv("MP_API_KEY")
+DATA_FRAC = 1.
 SEED = 42
 
 
@@ -13,6 +15,12 @@ def chunked(lst, n):
     for i in range(0, len(lst), n):
         yield lst[i : i + n]
 
+
+if not API_KEY:
+    raise RuntimeError(
+        "Missing MP_API_KEY environment variable. "
+        "Please export MP_API_KEY before running build_data.py."
+    )
 
 mpr = MPRester(API_KEY, mute_progress_bars=False)
 df = pd.read_csv("2025-02-01-mp-energies.csv")
