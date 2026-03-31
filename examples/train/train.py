@@ -7,7 +7,7 @@ from cgcnn.trainer import Trainer
 
 dataset = StructureData(
     data_fn="data/formation_energies.json",
-    radius=5.0,
+    radius=6.0,
     dmin=0.0,
     step=0.2,
 )
@@ -17,8 +17,8 @@ train_loader, val_loader, test_loader = get_train_val_test_loader(
     collate_fn=collate_data,
     train_ratio=0.8,
     val_ratio=0.1,
-    batch_size=64,
-    num_workers=0,
+    batch_size=256,
+    num_workers=4,
     pin_memory=torch.cuda.is_available(),
     seed=42,
 )
