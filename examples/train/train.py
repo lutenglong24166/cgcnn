@@ -5,8 +5,21 @@ import torch
 from cgcnn.data.dataset import StructureData, collate_data, get_train_val_test_loader
 from cgcnn.trainer import Trainer
 
+DATA_FN = "data/formation_energies.json"
+# Set WANDB_PATH to "project/run_name" to enable W&B logging.
+# Keep it as None to disable W&B.
+WANDB_PATH = None
+
+# Optional modes: "online", "offline", "disabled".
+# Keep it as None to use wandb default mode.
+WANDB_MODE = None
+
+wandb_init_kwargs = {}
+if WANDB_MODE:
+    wandb_init_kwargs["mode"] = WANDB_MODE
+
 dataset = StructureData(
-    data_fn="data/formation_energies.json",
+    data_fn=DATA_FN,
     radius=6.0,
     dmin=0.0,
     step=0.2,
@@ -42,24 +55,31 @@ trainer = Trainer(
     seed=42,
     max_grad_norm=None,
     ckpt_path="checkpoints/checkpoint.pth.tar",
+    wandb_path=WANDB_PATH,
+    wandb_init_kwargs=wandb_init_kwargs or None,
+    extra_run_config={"data_fn": DATA_FN},
 )
 total_params = trainer.parameter_count(train_loader=train_loader)
 print(f"Model params: total={total_params:,}")
 
-trainer.train(
-    train_loader=train_loader,
-    val_loader=val_loader,
-    epochs=50,
-    print_freq=1,
-)
+try:
+    trainer.train(
+        train_loader=train_loader,
+        val_loader=val_loader,
+        epochs=50,
+        print_freq=1,
+        wandb_log_freq="epoch",
+    )
 
-metrics = trainer.test(
-    test_loader=test_loader,
-    output_csv="test_results.csv",
-)
+    metrics = trainer.test(
+        test_loader=test_loader,
+        output_csv="test_results.csv",
+    )
 
-print(
-    f"Test: loss={metrics['loss']:.6f}, "
-    f"mae={metrics['mae']:.6f}, "
-    f"time_sec={metrics['time_sec']:.2f}"
-)
+    print(
+        f"Test: loss={metrics['loss']:.6f}, "
+        f"mae={metrics['mae']:.6f}, "
+        f"time_sec={metrics['time_sec']:.2f}"
+    )
+finally:
+    trainer.finish_wandb()

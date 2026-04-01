@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import random
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -60,6 +61,9 @@ class Trainer:
         seed: int | None = None,
         max_grad_norm: float | None = None,
         ckpt_path: str | Path | None = None,
+        wandb_path: str | None = None,
+        wandb_init_kwargs: dict[str, Any] | None = None,
+        extra_run_config: dict[str, Any] | None = None,
     ):
         self.model = model
         self.model_kwargs = {} if model_kwargs is None else dict(model_kwargs)
@@ -74,6 +78,7 @@ class Trainer:
         self.optimizer: torch.optim.Optimizer | None = None
         self.scheduler: Any | None = None
 
+        self.seed = seed
         if seed is not None:
             self._set_seed(seed)
 
@@ -90,6 +95,16 @@ class Trainer:
 
         self.max_grad_norm = max_grad_norm
         self.ckpt_path = Path(ckpt_path) if ckpt_path is not None else None
+        self.wandb_path = wandb_path
+        self.wandb_init_kwargs = (
+            {} if wandb_init_kwargs is None else dict(wandb_init_kwargs)
+        )
+        self.extra_run_config = (
+            {} if extra_run_config is None else dict(extra_run_config)
+        )
+        self._wandb: Any | None = None
+        self._wandb_run: Any | None = None
+        self.run_config: dict[str, Any] = {}
 
         if self.model is not None:
             self.model.to(self.device)
@@ -248,6 +263,104 @@ class Trainer:
 
     def _main_metric_name(self):
         return "mae" if self.task == "regression" else "acc"
+
+    @staticmethod
+    def _normalize_config_value(value: Any):
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        if isinstance(value, Path):
+            return str(value)
+        if isinstance(value, Mapping):
+            return {
+                str(k): Trainer._normalize_config_value(v) for k, v in value.items()
+            }
+        if isinstance(value, (list, tuple, set)):
+            return [Trainer._normalize_config_value(v) for v in value]
+        return str(value)
+
+    @staticmethod
+    def _parse_wandb_path(wandb_path: str):
+        parts = wandb_path.split("/")
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            raise ValueError(
+                "wandb_path must be in the format 'project/run_name', "
+                f"got {wandb_path!r}"
+            )
+        return parts[0], parts[1]
+
+    def _collect_run_config(
+        self,
+        train_loader: torch.utils.data.DataLoader,
+        val_loader: torch.utils.data.DataLoader,
+        epochs: int,
+        print_freq: int,
+    ):
+        config: dict[str, Any] = {
+            "task": self.task,
+            "seed": self.seed,
+            "device": str(self.device),
+            "optimizer": self.optimizer_name,
+            "learning_rate": self.learning_rate,
+            "weight_decay": self.weight_decay,
+            "momentum": self.momentum,
+            "scheduler": self.scheduler_name,
+            "scheduler_params": dict(self.scheduler_params),
+            "max_grad_norm": self.max_grad_norm,
+            "model_kwargs": dict(self.model_kwargs),
+            "epochs": epochs,
+            "print_freq": print_freq,
+            "train_num_batches": len(train_loader),
+            "val_num_batches": len(val_loader),
+            "ckpt_path": str(self.ckpt_path) if self.ckpt_path is not None else None,
+        }
+        if self.model is not None:
+            config["model_name"] = type(self.model).__name__
+            config["parameter_count"] = sum(p.numel() for p in self.model.parameters())
+        if self.wandb_path is not None:
+            config["wandb_path"] = self.wandb_path
+
+        config.update(self.extra_run_config)
+        return self._normalize_config_value(config)
+
+    def _maybe_init_wandb(self, run_config: dict[str, Any]):
+        if self.wandb_path is None or self._wandb_run is not None:
+            return
+
+        try:
+            import wandb  # type: ignore
+        except ImportError as exc:
+            raise ImportError(
+                "wandb is not installed. Install optional dependencies with "
+                '`pip install -e ".[wandb]"`.'
+            ) from exc
+
+        project, run_name = self._parse_wandb_path(self.wandb_path)
+        init_kwargs = dict(self.wandb_init_kwargs)
+        user_config = init_kwargs.pop("config", None)
+
+        merged_config = dict(run_config)
+        if isinstance(user_config, Mapping):
+            merged_config.update(user_config)
+        elif user_config is not None:
+            merged_config["user_config"] = self._normalize_config_value(user_config)
+
+        init_kwargs.setdefault("project", project)
+        init_kwargs.setdefault("name", run_name)
+        init_kwargs["config"] = merged_config
+
+        self._wandb = wandb
+        self._wandb_run = wandb.init(**init_kwargs)
+
+    def _wandb_log(self, metrics: dict[str, Any], step: int | None = None):
+        if self._wandb_run is None or self._wandb is None:
+            return
+        self._wandb.log(metrics, step=step)
+
+    def finish_wandb(self):
+        if self._wandb_run is None or self._wandb is None:
+            return
+        self._wandb.finish()
+        self._wandb_run = None
 
     def _move_batch_to_device(
         self,
@@ -412,6 +525,12 @@ class Trainer:
         output_csv: str | Path | None = None,
     ) -> dict[str, Any]:
         metrics = self._run_epoch(loader=test_loader, training=False, return_preds=True)
+        test_log = {
+            f"test_{k}": float(v)
+            for k, v in metrics.items()
+            if k not in {"sample_ids", "targets", "preds"}
+        }
+        self._wandb_log(test_log, step=len(self.history) + 1)
 
         if output_csv is not None:
             output_csv = Path(output_csv)
@@ -443,6 +562,7 @@ class Trainer:
             "best_main_metric": self.best_main_metric,
             "task": self.task,
             "history": self.history,
+            "run_config": self.run_config,
         }
         if self.scheduler is not None and hasattr(self.scheduler, "state_dict"):
             state["scheduler"] = self.scheduler.state_dict()
@@ -459,9 +579,22 @@ class Trainer:
         val_loader: torch.utils.data.DataLoader,
         epochs: int,
         print_freq: int = 1,
+        wandb_log_freq: str = "epoch",
     ):
+        if wandb_log_freq != "epoch":
+            raise ValueError(
+                "Only wandb_log_freq='epoch' is supported in this trainer."
+            )
+
         main_metric_name = self._main_metric_name()
         self._ensure_initialized(train_loader, epochs=epochs, build_scheduler=True)
+        self.run_config = self._collect_run_config(
+            train_loader=train_loader,
+            val_loader=val_loader,
+            epochs=epochs,
+            print_freq=print_freq,
+        )
+        self._maybe_init_wandb(self.run_config)
         train_start = datetime.now()
 
         for epoch in range(1, epochs + 1):
@@ -497,7 +630,9 @@ class Trainer:
             if is_best:
                 self.best_main_metric = current_metric
 
+            row[f"best_val_{main_metric_name}"] = float(self.best_main_metric)
             self.save_checkpoint(epoch, is_best)
+            self._wandb_log(row, step=epoch)
 
             if epoch % print_freq == 0:
                 elapsed_hms = str(elapsed_delta).split(".")[0]

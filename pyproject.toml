@@ -22,6 +22,9 @@ dev = [
 mp = [
   "mp-api>=0.46.0",
 ]
+wandb = [
+  "wandb>=0.17",
+]
 
 [tool.setuptools.packages.find]
 include = ["cgcnn*"]
