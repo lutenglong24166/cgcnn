@@ -19,6 +19,9 @@ dependencies = [
 dev = [
   "ruff>=0.15.7",
 ]
+mp = [
+  "mp-api>=0.46.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["cgcnn*"]
