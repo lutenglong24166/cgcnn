@@ -36,7 +36,7 @@ docs = mpr.materials.summary.search(
 sample_ids = []
 structures = []
 targets = []
-for doc in tqdm(docs):
+for doc in tqdm(docs, desc="Building dataset", dynamic_ncols=True):
     material_id = doc["material_id"]
     structure = Structure.from_dict(doc["structure"])
     target = doc[PROPERTY]

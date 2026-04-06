@@ -12,7 +12,7 @@ WANDB_PATH = None
 
 # Optional modes: "online", "offline", "disabled".
 # Keep it as None to use wandb default mode.
-WANDB_MODE = None
+WANDB_MODE = "online"
 
 wandb_init_kwargs = {}
 if WANDB_MODE:
