@@ -154,7 +154,9 @@ class CrystalGraphConvNet(nn.Module):
             self.softpluses = nn.ModuleList([nn.Softplus() for _ in range(n_h - 1)])
 
         if self.classification:
-            pass
+            self.fc_out = nn.Linear(h_feature_len, 2)
+            self.logsoftmax = nn.LogSoftmax(dim=1)
+            self.dropout = nn.Dropout()
         else:
             self.fc_out = nn.Linear(h_feature_len, 1)
 
@@ -192,7 +194,7 @@ class CrystalGraphConvNet(nn.Module):
         crystal_feature = self.conv_to_fc_softplus(self.conv_to_fc(crystal_feature))
 
         if self.classification:
-            pass
+            crystal_feature = self.dropout(crystal_feature)
 
         if hasattr(self, "fcs") and hasattr(self, "softpluses"):
             for fc, sp in zip(self.fcs, self.softpluses):
@@ -202,6 +204,6 @@ class CrystalGraphConvNet(nn.Module):
         out = self.fc_out(crystal_feature)
 
         if self.classification:
-            pass
+            out = self.logsoftmax(out)
 
         return out

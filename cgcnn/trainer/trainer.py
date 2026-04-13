@@ -405,12 +405,19 @@ class Trainer:
     def _compute_metrics(self, pred: torch.Tensor, target: torch.Tensor):
         if self.task == "regression":
             return {"mae": self.mae(pred.detach(), target).item()}
-        return {}
+        pred_label = torch.argmax(pred.detach(), dim=1)
+        acc = (pred_label == target).float().mean().item()
+        return {"acc": acc}
 
     def _pred_for_export(self, pred: torch.Tensor):
         if self.task == "regression":
             return pred.detach().view(-1).cpu().tolist()
-        return []
+        pred_prob = torch.exp(pred.detach())
+        if pred_prob.ndim != 2 or pred_prob.size(1) != 2:
+            raise ValueError(
+                "Classification export expects log-probabilities with shape [N, 2]."
+            )
+        return pred_prob[:, 1].cpu().tolist()
 
     def _run_epoch(
         self,
